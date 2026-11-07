@@ -146,7 +146,13 @@ npm test             # 全部
 
 ### GitHub Pages
 
-1. 推送到 GitHub 的 `main` 分支。
+1. 在 GitHub 创建空仓库（不要勾选 README），然后关联并推送：
+
+   ```powershell
+   git remote add origin https://github.com/<你的用户名>/<仓库名>.git
+   git push -u origin main
+   ```
+
 2. 仓库 Settings → Pages → Build and deployment → Source 选择 **GitHub Actions**。
 3. `.github/workflows/pages.yml` 会自动把 `public/` 发布为站点。
 4. manifest、Service Worker 与资源全部使用相对路径，部署在用户主页子路径下也不需要改代码。

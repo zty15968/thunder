@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const TS = window.TS = window.TS || {};
-  const VERSION = '0.9.1';
+  const VERSION = '1.0.0';
 
   // ---------------------------------------------------------------------------
   // Tunables. Keep gameplay numbers here so balance changes don't touch logic.
