@@ -127,34 +127,89 @@ async function main() {
     assert('touch pause button pauses', s.paused === true, s.paused);
     await shot('10-mobile-pause.png');
 
-    const rows = await evalJS('TS.debug.pauseRows().map(r => ({id:r.id,y:r.y,h:r.h}))');
-    const rowY = id => {
+    const rowsFor = () => evalJS('TS.debug.pauseRows().map(r => ({id:r.id,y:r.y,h:r.h}))');
+    const rowY = (rows, id) => {
       const row = rows.find(r => r.id === id);
       if (!row) throw new Error('missing pause row: ' + id);
       return row.y + row.h / 2;
     };
-    await tap(240, rowY('resume'));
+
+    let rows = await rowsFor();
+    await tap(240, rowY(rows, 'settings'));
+    s = await snap();
+    assert('settings page opens from pause menu', s.pausePage === 'settings', s.pausePage);
+
+    const settingsRows = await rowsFor();
+    await tap(240, rowY(settingsRows, 'control'));
+    s = await snap();
+    assert('touch control row switches to joystick', s.controlMode === 'stick', s.controlMode);
+    await tap(240, rowY(settingsRows, 'autoFire'));
+    s = await snap();
+    assert('auto fire can be disabled', s.autoFire === false, s.autoFire);
+    await tap(240, rowY(settingsRows, 'back'));
+    s = await snap();
+    assert('settings back returns to pause main', s.pausePage === 'main', s.pausePage);
+    await tap(240, rowY(rows, 'resume'));
     s = await snap();
     assert('touch resume row works', s.paused === false, s.paused);
     await shot('11-mobile-play.png');
 
+    // Floating joystick: finger offset from origin drives movement while held.
+    await evalJS('TS.debug.makeInvincible();');
+    const stickRect = await rect();
+    const sx = stickRect.x + stickRect.w * (130 / 480);
+    const sy = stickRect.y + stickRect.h * (520 / 720);
+    const beforeStick = (await snap()).player.x;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy }] });
+    await sleep(100);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx + 90, y: sy }] });
+    await sleep(600);
+    s = await snap();
+    const stickDelta = s.player.x - beforeStick;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(300);
+    assert('floating joystick moves ship while held', stickDelta > 30, { from: beforeStick, to: s.player.x });
+    const afterRelease = (await snap()).player.x;
+    await sleep(400);
+    s = await snap();
+    assert('joystick stops on release', Math.abs(s.player.x - afterRelease) < 6, { afterRelease, now: s.player.x });
+
+    // Manual fire button: must be held, and releasing stops new shots.
+    const buttons = await evalJS('TS.debug.touchButtons()');
+    const fire = buttons.fire;
+    const fx = stickRect.x + stickRect.w * (fire.x / 480);
+    const fy = stickRect.y + stickRect.h * (fire.y / 720);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: fx, y: fy }] });
+    await sleep(500);
+    s = await snap();
+    assert('touch fire button shoots while held', s.pBullets > 0, s.pBullets);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(1800);
+    s = await snap();
+    assert('releasing touch fire stops shooting', s.pBullets === 0, s.pBullets);
+    await evalJS('TS.debug.setAutoFire(true);');
+
     // Fullscreen toggle row (only when the browser supports it).
     const fsSupported = await evalJS('!!document.fullscreenEnabled');
-    const hasFsRow = rows.some(r => r.id === 'fullscreen');
+    await tap(460, 76);
+    await sleep(200);
+    rows = await rowsFor();
+    await tap(240, rowY(rows, 'settings'));
+    const fsRows = await rowsFor();
+    const hasFsRow = fsRows.some(r => r.id === 'fullscreen');
     if (fsSupported && hasFsRow) {
-      await tap(460, 76);
-      await sleep(200);
-      await tap(240, rowY('fullscreen'));
-      await sleep(500);
+      await tap(240, rowY(fsRows, 'fullscreen'));
+      await sleep(600);
       const inFs = await evalJS('!!document.fullscreenElement');
       assert('fullscreen row enters fullscreen', inFs === true, { supported: fsSupported, inFs });
       if (inFs) {
         await evalJS('document.exitFullscreen().catch(() => {})');
-        await sleep(500);
+        await sleep(600);
         const outFs = await evalJS('!!document.fullscreenElement');
         assert('fullscreen can be exited', outFs === false, outFs);
       }
     }
+    await evalJS('TS.debug.setControlMode("drag");');
   } catch (e) {
     errors.push('SCRIPT ' + (e && e.stack || e));
   } finally {

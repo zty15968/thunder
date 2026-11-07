@@ -5,8 +5,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const {
-  OUT, sleep, createServer, launchBrowser, attachErrorTracking, openPage
+  OUT, ROOT, sleep, createServer, launchBrowser, attachErrorTracking, openPage
 } = require('./harness');
 
 const PORT = 8137;
@@ -132,6 +133,28 @@ async function main() {
     assert('P resumes', s.paused === false, s.paused);
     assert('resume restarts music', s.audio.musicPlaying === true, s.audio);
 
+    // Manual fire mode: no bullets until the fire key is held.
+    await evalJS('TS.debug.makeInvincible(); TS.debug.setAutoFire(false);');
+    await sleep(1700);
+    s = await snap();
+    assert('manual mode stops auto fire', s.pBullets === 0, s.pBullets);
+    await cdp.send('Input.dispatchKeyEvent', {
+      type: 'keyDown', code: 'KeyJ', key: 'j',
+      windowsVirtualKeyCode: 74, nativeVirtualKeyCode: 74
+    });
+    await sleep(350);
+    s = await snap();
+    assert('holding J fires manually', s.pBullets > 0, s.pBullets);
+    await cdp.send('Input.dispatchKeyEvent', {
+      type: 'keyUp', code: 'KeyJ', key: 'j',
+      windowsVirtualKeyCode: 74, nativeVirtualKeyCode: 74
+    });
+    await sleep(1700);
+    s = await snap();
+    assert('releasing J stops firing', s.pBullets === 0, s.pBullets);
+    await evalJS('TS.debug.setAutoFire(true);');
+    await sleep(300);
+
     // Laser weapon + missiles.
     await evalJS('TS.debug.setWeapon("laser", 6); TS.debug.grantMissile();');
     await sleep(700);
@@ -168,7 +191,7 @@ async function main() {
     assert('game keeps running after boss', s.state === 'play', s.state);
 
     // Touch controls overlay + bomb button.
-    await evalJS('TS.debug.setTouchMode(true);');
+    await evalJS('TS.debug.makeInvincible(); TS.debug.setTouchMode(true);');
     await sleep(250);
     const sb = await snap();
     await shot('05-touch.png');
@@ -268,12 +291,31 @@ async function main() {
       if (!row) throw new Error('missing pause row: ' + id);
       return row.y + row.h / 2;
     };
-    await clickAt(240, rowY('mute'));
+    await clickAt(240, rowY('settings'));
+    let settingsRows = await evalJS('TS.debug.pauseRows().map(r => ({id:r.id,y:r.y,h:r.h}))');
+    assert('pause menu opens settings page',
+      (await snap()).pausePage === 'settings' && settingsRows.some(r => r.id === 'autoFire'),
+      settingsRows.map(r => r.id));
+    const settingsRowY = id => {
+      const row = settingsRows.find(r => r.id === id);
+      if (!row) throw new Error('missing settings row: ' + id);
+      return row.y + row.h / 2;
+    };
+    await clickAt(240, settingsRowY('mute'));
     s = await snap();
     assert('pause menu mute toggle works', s.audio.muted === true, s.audio);
-    await clickAt(240, rowY('mute'));
+    await clickAt(240, settingsRowY('mute'));
     s = await snap();
     assert('pause menu mute toggles back', s.audio.muted === false, s.audio);
+    await clickAt(240, settingsRowY('control'));
+    s = await snap();
+    assert('touch control mode toggles to stick', s.controlMode === 'stick', s.controlMode);
+    await clickAt(240, settingsRowY('control'));
+    s = await snap();
+    assert('touch control mode toggles back to drag', s.controlMode === 'drag', s.controlMode);
+    await clickAt(240, settingsRowY('back'));
+    s = await snap();
+    assert('settings back returns to main pause page', s.pausePage === 'main', s.pausePage);
     await clickAt(240, rowY('restart'));
     s = await snap();
     assert('pause menu restart button works',
@@ -310,6 +352,11 @@ async function main() {
     await sleep(2500);
     s = await snap();
     console.log('final snapshot', JSON.stringify(s));
+
+    // The game must still run when opened directly from disk (no server).
+    await openPage(cdp, pathToFileURL(path.join(ROOT, 'index.html')).href);
+    await sleep(800);
+    assert('file:// entry loads and starts', await evalJS('!!window.TS && !!TS.debug && TS.debug.snapshot().state === "title"'));
   } catch (e) {
     errors.push('SCRIPT: ' + (e && e.stack || e));
     console.log('SCRIPT ERROR', e);

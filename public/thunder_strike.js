@@ -47,6 +47,8 @@
         base.sfx = s.sfx !== undefined ? clamp(Number(s.sfx) || 0, 0, 1) : base.sfx;
         base.shake = s.shake !== false;
         base.hitbox = s.hitbox !== false;
+        base.autoFire = s.autoFire !== false;
+        base.controlMode = s.controlMode === 'stick' ? 'stick' : 'drag';
       }
     } catch (e) { /* private mode */ }
     return base;
@@ -69,6 +71,7 @@
   // -------------------------------------------------------------------------
   let state = 'title';       // title | play | over
   let paused = false;
+  let pausePage = 'main';    // main | settings
   let animT = 0;
   let gameTime = 0;
   let score = 0;
@@ -261,16 +264,25 @@
   const Input = {
     touchMode: window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false,
     drag: null,        // { id, startX, startY, playerX, playerY }
+    stick: null,       // { id, ox, oy, vx, vy, dist }
     focusTouch: false,
     focusId: null,
-    bombId: null
+    bombId: null,
+    fireTouch: false,
+    fireId: null,
+    firePointerId: null
   };
 
   const TOUCH = {
     bomb: { x: W - 46, y: H - 48, r: 27 },
     focus: { x: W - 112, y: H - 48, r: 21 },
+    fire: { x: W - 184, y: H - 48, r: 27 },
     pause: { x: W - 20, y: 76, r: 15 }
   };
+
+  const fireHeld = () => settings.autoFire ||
+    Input.fireTouch || Input.firePointerId !== null ||
+    keys.has('KeyJ') || keys.has('KeyZ');
 
   const hitCircle = (x, y, c) => dist2(x, y, c.x, c.y) <= c.r * c.r;
 
@@ -297,7 +309,12 @@
     if (e.code === 'Enter') {
       if (state === 'title' || state === 'over') startGame();
     } else if (e.code === 'KeyP' || e.code === 'Escape') {
-      if (state === 'play') togglePause();
+      if (state === 'play') {
+        if (paused && (e.code === 'Escape' || e.code === 'KeyP') && pausePage === 'settings') {
+          if (e.code === 'Escape') { pausePage = 'main'; return; }
+        }
+        togglePause();
+      }
     } else if (e.code === 'KeyR') {
       if (state === 'over' || paused) startGame();
     } else if (e.code === 'Space') {
@@ -340,7 +357,21 @@
         Input.focusId = e.pointerId;
         return;
       }
+      if (!settings.autoFire && hitCircle(p.x, p.y, TOUCH.fire)) {
+        Input.fireTouch = true;
+        Input.fireId = e.pointerId;
+        return;
+      }
     }
+
+    if (settings.controlMode === 'stick' && Input.touchMode) {
+      if (Input.stick) return;
+      Input.stick = { id: e.pointerId, ox: p.x, oy: p.y, vx: 0, vy: 0, dist: 0 };
+      try { cvs.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      return;
+    }
+
+    if (!settings.autoFire && e.pointerType !== 'touch') Input.firePointerId = e.pointerId;
 
     if (!Input.drag) {
       Input.drag = {
@@ -353,8 +384,23 @@
   }
 
   function onPointerMove(e) {
-    if (!Input.drag || Input.drag.id !== e.pointerId || player.dead) return;
+    if (player.dead) return;
     const p = pointerPos(e);
+
+    if (Input.stick && Input.stick.id === e.pointerId) {
+      const s = Input.stick;
+      let dx = p.x - s.ox, dy = p.y - s.oy;
+      const d = hypot(dx, dy);
+      const R = CONFIG.input.stickRadius;
+      s.dist = d;
+      if (d > R) { dx = dx / d * R; dy = dy / d * R; }
+      const dead = CONFIG.input.stickDead * R;
+      s.vx = Math.abs(dx) < dead ? 0 : dx / R;
+      s.vy = Math.abs(dy) < dead ? 0 : dy / R;
+      return;
+    }
+
+    if (!Input.drag || Input.drag.id !== e.pointerId) return;
     const d = Input.drag;
     const focus = Input.focusTouch || keys.has('ShiftLeft') || keys.has('ShiftRight');
     const scale = focus ? CONFIG.player.focusScale : 1;
@@ -365,19 +411,34 @@
 
   function onPointerUp(e) {
     if (Input.drag && Input.drag.id === e.pointerId) Input.drag = null;
+    if (Input.stick && Input.stick.id === e.pointerId) Input.stick = null;
     if (Input.focusId === e.pointerId) {
       Input.focusTouch = false;
       Input.focusId = null;
     }
     if (Input.bombId === e.pointerId) Input.bombId = null;
+    if (Input.fireId === e.pointerId) {
+      Input.fireTouch = false;
+      Input.fireId = null;
+    }
+    if (Input.firePointerId === e.pointerId) Input.firePointerId = null;
+  }
+
+  function clearInputState() {
+    keys.clear();
+    Input.drag = null;
+    Input.stick = null;
+    Input.focusTouch = false;
+    Input.focusId = null;
+    Input.fireTouch = false;
+    Input.fireId = null;
+    Input.firePointerId = null;
   }
 
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', onKeyUp);
   addEventListener('blur', () => {
-    keys.clear();
-    Input.drag = null;
-    Input.focusTouch = false;
+    clearInputState();
     if (state === 'play' && !paused) togglePause();
   });
   document.addEventListener('visibilitychange', () => {
@@ -500,9 +561,8 @@
     });
 
     keys.clear();
-    Input.drag = null;
-    Input.focusTouch = false;
-    Input.focusId = null;
+    clearInputState();
+    pausePage = 'main';
     buildSector(1);
     banner = { text: 'SECTOR I', sub: theme.name, t: 0, dur: CONFIG.sector.bannerDur };
     Audio.beamOff();
@@ -512,16 +572,32 @@
   function togglePause() {
     if (state !== 'play') return;
     paused = !paused;
-    keys.clear();
-    Input.drag = null;
-    Input.focusTouch = false;
-    Input.focusId = null;
+    clearInputState();
     if (paused) {
+      pausePage = 'main';
       Audio.pauseMusic();
       Audio.beamOff();
     } else {
       Audio.resumeMusic();
     }
+  }
+
+  function quitToTitle() {
+    state = 'title';
+    paused = false;
+    pausePage = 'main';
+    clearInputState();
+    warnT = 0;
+    boss = null;
+    bossBannerT = 0;
+    eBullets.length = 0;
+    hazards.length = 0;
+    enemies.length = 0;
+    drops.length = 0;
+    pBullets.length = 0;
+    pendings.length = 0;
+    Audio.beamOff();
+    Audio.stopMusic(0.3);
   }
 
   function gameOver() {
@@ -1296,14 +1372,19 @@
     p.muzzle = Math.max(0, p.muzzle - dt);
 
     const focus = keys.has('ShiftLeft') || keys.has('ShiftRight') || Input.focusTouch;
+    const speed = p.speed * (focus ? CONFIG.player.focusScale : 1);
     let targetTilt = 0;
 
-    if (!Input.drag) {
+    if (Input.stick) {
+      const s = Input.stick;
+      p.x = clamp(p.x + s.vx * speed * dt, CONFIG.playfield.left, W - CONFIG.playfield.right);
+      p.y = clamp(p.y + s.vy * speed * dt, CONFIG.playfield.top, H - CONFIG.playfield.bottom);
+      targetTilt = clamp(s.vx, -1, 1) * 0.3;
+    } else if (!Input.drag) {
       const hx = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0);
       const hy = (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0) - (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0);
       let mx = hx, my = hy;
       if (mx && my) { mx *= Math.SQRT1_2; my *= Math.SQRT1_2; }
-      const speed = p.speed * (focus ? CONFIG.player.focusScale : 1);
       p.x = clamp(p.x + mx * speed * dt, CONFIG.playfield.left, W - CONFIG.playfield.right);
       p.y = clamp(p.y + my * speed * dt, CONFIG.playfield.top, H - CONFIG.playfield.bottom);
       targetTilt = hx * 0.28;
@@ -1321,20 +1402,29 @@
       }
     }
 
+    const wantsFire = fireHeld();
     if (p.weapon === 'spread') {
-      p.fireT -= dt;
-      if (p.fireT <= 0) {
-        p.fireT = WEAPONS.spread.fireInterval;
-        fireSpread();
+      if (wantsFire) {
+        p.fireT -= dt;
+        if (p.fireT <= 0) {
+          p.fireT = WEAPONS.spread.fireInterval;
+          fireSpread();
+        }
+      } else {
+        p.fireT = 0;
       }
       Audio.beamOff();
     } else {
-      p.beamTick -= dt;
-      if (p.beamTick <= 0) {
-        p.beamTick += WEAPONS.laser.beamTick;
-        fireBeamTick();
+      if (wantsFire) {
+        p.beamTick -= dt;
+        if (p.beamTick <= 0) {
+          p.beamTick += WEAPONS.laser.beamTick;
+          fireBeamTick();
+        }
+        Audio.beamOn();
+      } else {
+        Audio.beamOff();
       }
-      Audio.beamOn();
     }
 
     if (Math.random() < dt * 34 && parts.length < CONFIG.limits.maxParticles) {
@@ -2154,7 +2244,7 @@
       }
     }
 
-    if (player.weapon === 'laser' && !player.dead && state === 'play') {
+    if (player.weapon === 'laser' && !player.dead && state === 'play' && fireHeld()) {
       const { data, offsets } = beamOffsets();
       const y1 = player.y - 16;
       ctx.save();
@@ -2442,6 +2532,11 @@
     ctx.textAlign = 'right';
     ctx.font = '10px ' + FONT;
     let sy = Input.touchMode ? H - 122 : H - 92;
+    if (!settings.autoFire) {
+      ctx.fillStyle = '#ffb347';
+      ctx.fillText('手动开火', W - 14, sy);
+      sy += 15;
+    }
     ctx.fillStyle = 'rgba(160,190,225,.75)';
     ctx.fillText('擦弹 ' + player.graze, W - 14, sy);
     sy += 15;
@@ -2479,6 +2574,19 @@
     ctx.font = 'bold 12px ' + FONT;
     ctx.fillText('焦点', TOUCH.focus.x, TOUCH.focus.y);
 
+    if (!settings.autoFire) {
+      const on = Input.fireTouch;
+      ctx.fillStyle = on ? 'rgba(255,150,70,.42)' : 'rgba(10,20,38,.55)';
+      ctx.strokeStyle = on ? 'rgba(255,210,130,.95)' : 'rgba(255,180,90,.55)';
+      ctx.beginPath(); ctx.arc(TOUCH.fire.x, TOUCH.fire.y, TOUCH.fire.r, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = on ? '#fff' : '#ffd0a0';
+      ctx.font = 'bold 13px ' + FONT;
+      ctx.fillText('开火', TOUCH.fire.x, TOUCH.fire.y - 2);
+      ctx.font = '9px ' + FONT;
+      ctx.fillStyle = 'rgba(255,210,170,.65)';
+      ctx.fillText('按住', TOUCH.fire.x, TOUCH.fire.y + 13);
+    }
+
     ctx.fillStyle = 'rgba(10,20,38,.55)';
     ctx.strokeStyle = 'rgba(255,180,90,.55)';
     ctx.beginPath(); ctx.arc(TOUCH.bomb.x, TOUCH.bomb.y, TOUCH.bomb.r, 0, TAU); ctx.fill(); ctx.stroke();
@@ -2487,6 +2595,22 @@
     ctx.fillText('炸弹', TOUCH.bomb.x, TOUCH.bomb.y - 2);
     ctx.font = 'bold 11px ' + MONO;
     ctx.fillText(String(player.bombs), TOUCH.bomb.x, TOUCH.bomb.y + 13);
+
+    if (Input.stick) {
+      const s = Input.stick;
+      const R = CONFIG.input.stickRadius;
+      ctx.strokeStyle = 'rgba(130,190,255,.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.ox, s.oy, R, 0, TAU); ctx.stroke();
+      ctx.fillStyle = 'rgba(10,20,38,.28)';
+      ctx.beginPath(); ctx.arc(s.ox, s.oy, R, 0, TAU); ctx.fill();
+      const kx = s.ox + s.vx * R, ky = s.oy + s.vy * R;
+      ctx.fillStyle = 'rgba(140,210,255,.55)';
+      ctx.beginPath(); ctx.arc(kx, ky, 19, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(210,240,255,.85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(kx, ky, 19, 0, TAU); ctx.stroke();
+    }
 
     ctx.restore();
     ctx.textBaseline = 'alphabetic';
@@ -2597,8 +2721,11 @@
     ctx.font = '14px ' + FONT;
     ctx.fillStyle = '#bcd0ea';
     ctx.fillText('移动 方向键 / WASD · 焦点 Shift', W / 2, 316);
-    ctx.fillText('炸弹 空格 · 暂停 P · 静音 M', W / 2, 342);
-    ctx.fillText('触屏：拖拽移动 · 右下炸弹 / 焦点', W / 2, 368);
+    ctx.fillText(settings.autoFire
+      ? '自动开火 · 炸弹 空格 · 暂停 P'
+      : '开火 J / Z（按住）· 炸弹 空格 · 暂停 P', W / 2, 342);
+    ctx.fillText('触屏：' + (settings.controlMode === 'stick' ? '任意位置拖动虚拟摇杆' : '拖拽画面移动') +
+      (settings.autoFire ? ' · 右下炸弹 / 焦点' : ' · 右下开火 / 炸弹 / 焦点'), W / 2, 368);
 
     ctx.textAlign = 'left';
     const items = [
@@ -2666,25 +2793,42 @@
   }
 
   function getPauseRows() {
-    const rows = [
-      { id: 'resume', label: '继续', type: 'button' },
-      { id: 'restart', label: '重新开始', type: 'button' },
-      { id: 'music', label: '音乐音量', type: 'slider', value: settings.music },
-      { id: 'sfx', label: '音效音量', type: 'slider', value: settings.sfx },
-      { id: 'shake', label: '屏幕震动', type: 'toggle', value: settings.shake },
-      { id: 'hitbox', label: '判定点', type: 'toggle', value: settings.hitbox },
-      { id: 'mute', label: '静音', type: 'toggle', value: settings.muted }
-    ];
-    if (canFullscreen()) {
-      rows.push({ id: 'fullscreen', label: '全屏模式', type: 'toggle', value: isFullscreen() });
+    let rows, y0, h, gap;
+    if (pausePage === 'settings') {
+      rows = [
+        { id: 'music', label: '音乐音量', type: 'slider', value: settings.music },
+        { id: 'sfx', label: '音效音量', type: 'slider', value: settings.sfx },
+        { id: 'shake', label: '屏幕震动', type: 'toggle', value: settings.shake },
+        { id: 'hitbox', label: '判定点', type: 'toggle', value: settings.hitbox },
+        { id: 'mute', label: '静音', type: 'toggle', value: settings.muted },
+        { id: 'control', label: '触屏操作', type: 'choice', value: settings.controlMode },
+        { id: 'autoFire', label: '自动开火', type: 'toggle', value: settings.autoFire }
+      ];
+      if (canFullscreen()) {
+        rows.push({ id: 'fullscreen', label: '全屏模式', type: 'toggle', value: isFullscreen() });
+      }
+      rows.push({ id: 'back', label: '返回', type: 'button' });
+      y0 = 128;
+      h = 42;
+      gap = 10;
+    } else {
+      rows = [
+        { id: 'resume', label: '继续', type: 'button' },
+        { id: 'restart', label: '重新开始', type: 'button' },
+        { id: 'settings', label: '设置', type: 'button' },
+        { id: 'quit', label: '返回标题', type: 'button' }
+      ];
+      y0 = 224;
+      h = 46;
+      gap = 12;
     }
-    const x = W / 2 - 170, y0 = 160, h = 40, gap = 9;
+    const x = W / 2 - 170;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       r.x = x; r.y = y0 + i * (h + gap); r.w = 340; r.h = h;
       if (r.type === 'slider') {
-        r.minus = { x: r.x + r.w - 96, y: r.y + 8, w: 28, h: 24 };
-        r.plus = { x: r.x + r.w - 28, y: r.y + 8, w: 28, h: 24 };
+        r.minus = { x: r.x + r.w - 96, y: r.y + 9, w: 28, h: 24 };
+        r.plus = { x: r.x + r.w - 28, y: r.y + 9, w: 28, h: 24 };
       }
     }
     return rows;
@@ -2693,6 +2837,12 @@
   function adjustVolume(key, delta) {
     settings[key] = clamp(Math.round((settings[key] + delta) * 10) / 10, 0, 1);
     Audio.setVolumes(settings.music, settings.sfx);
+    saveSettings();
+  }
+
+  function cycleControlMode() {
+    settings.controlMode = settings.controlMode === 'stick' ? 'drag' : 'stick';
+    clearInputState();
     saveSettings();
   }
 
@@ -2710,9 +2860,19 @@
       }
       if (r.id === 'resume') { togglePause(); return; }
       if (r.id === 'restart') { startGame(); return; }
+      if (r.id === 'settings') { pausePage = 'settings'; return; }
+      if (r.id === 'back') { pausePage = 'main'; return; }
+      if (r.id === 'quit') { quitToTitle(); return; }
       if (r.id === 'fullscreen') { toggleFullscreen(); return; }
       if (r.id === 'shake') { settings.shake = !settings.shake; saveSettings(); return; }
       if (r.id === 'hitbox') { settings.hitbox = !settings.hitbox; saveSettings(); return; }
+      if (r.id === 'control') { cycleControlMode(); return; }
+      if (r.id === 'autoFire') {
+        settings.autoFire = !settings.autoFire;
+        clearInputState();
+        saveSettings();
+        return;
+      }
       if (r.id === 'mute') {
         settings.muted = !settings.muted;
         Audio.setMuted(settings.muted);
@@ -2723,15 +2883,16 @@
   }
 
   function drawPauseScreen() {
-    ctx.fillStyle = 'rgba(3,6,16,.68)';
+    ctx.fillStyle = 'rgba(3,6,16,.72)';
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 38px ' + FONT;
+    const settingsPage = pausePage === 'settings';
+    ctx.font = 'bold ' + (settingsPage ? '32px ' : '38px ') + FONT;
     ctx.fillStyle = '#fff';
-    ctx.fillText('已暂停', W / 2, 110);
+    ctx.fillText(settingsPage ? '设置' : '已暂停', W / 2, settingsPage ? 88 : 116);
     ctx.font = '12px ' + FONT;
     ctx.fillStyle = '#9fb3d4';
-    ctx.fillText('P / Esc 继续 · R 重新开始', W / 2, 136);
+    ctx.fillText(settingsPage ? '调整会立即生效并自动保存' : 'P / Esc 继续 · R 重新开始', W / 2, settingsPage ? 112 : 142);
 
     const rows = getPauseRows();
     for (const r of rows) {
@@ -2743,15 +2904,16 @@
       ctx.stroke();
 
       ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
       ctx.font = 'bold 14px ' + FONT;
       ctx.fillStyle = '#dbe8fb';
-      ctx.fillText(r.label, r.x + 16, r.y + 26);
+      ctx.fillText(r.label, r.x + 16, r.y + r.h / 2);
 
       ctx.textAlign = 'right';
       if (r.type === 'slider') {
         ctx.font = 'bold 13px ' + MONO;
         ctx.fillStyle = '#8fe3ff';
-        ctx.fillText(Math.round(r.value * 100) + '%', r.x + r.w - 52, r.y + 26);
+        ctx.fillText(Math.round(r.value * 100) + '%', r.x + r.w - 52, r.y + r.h / 2);
         for (const item of [[r.minus, '−'], [r.plus, '+']]) {
           const bx = item[0];
           rr(bx.x, bx.y, bx.w, bx.h, 5);
@@ -2760,18 +2922,25 @@
           ctx.fillStyle = '#fff';
           ctx.font = 'bold 16px ' + MONO;
           ctx.textAlign = 'center';
-          ctx.fillText(item[1], bx.x + bx.w / 2, bx.y + 18);
+          ctx.textBaseline = 'middle';
+          ctx.fillText(item[1], bx.x + bx.w / 2, bx.y + bx.h / 2);
         }
       } else if (r.type === 'toggle') {
         ctx.font = 'bold 13px ' + FONT;
         ctx.fillStyle = r.value ? '#7fe8a8' : 'rgba(160,180,210,.55)';
-        ctx.fillText(r.value ? '开' : '关', r.x + r.w - 22, r.y + 26);
+        ctx.fillText(r.value ? '开' : '关', r.x + r.w - 22, r.y + r.h / 2);
+      } else if (r.type === 'choice') {
+        ctx.font = 'bold 13px ' + FONT;
+        ctx.fillStyle = '#8fe3ff';
+        ctx.fillText(r.value === 'stick' ? '虚拟摇杆' : '拖拽移动', r.x + r.w - 22, r.y + r.h / 2);
       }
+      ctx.textBaseline = 'alphabetic';
     }
+
     ctx.textAlign = 'center';
     ctx.font = '11px ' + FONT;
     ctx.fillStyle = 'rgba(140,170,210,.55)';
-    ctx.fillText('设置会自动保存', W / 2, rows[rows.length - 1].y + 70);
+    ctx.fillText('设置会自动保存 · v' + TS.VERSION, W / 2, rows[rows.length - 1].y + 62);
   }
 
   // -------------------------------------------------------------------------
@@ -2918,7 +3087,10 @@
     snapshot() {
       return {
         version: TS.VERSION,
-        state, paused, score, sector, gameTime, bossKills, warnT,
+        state, paused, pausePage, score, sector, gameTime, bossKills, warnT,
+        touchMode: Input.touchMode,
+        controlMode: settings.controlMode,
+        autoFire: settings.autoFire,
         enemies: enemies.length,
         eBullets: eBullets.length,
         pBullets: pBullets.length,
@@ -2950,6 +3122,22 @@
         id: r.id, label: r.label, type: r.type,
         value: r.value, x: r.x, y: r.y, w: r.w, h: r.h
       }));
+    },
+    setPausePage(page) {
+      pausePage = page === 'settings' ? 'settings' : 'main';
+    },
+    setAutoFire(v) {
+      settings.autoFire = !!v;
+      clearInputState();
+      saveSettings();
+    },
+    setControlMode(mode) {
+      settings.controlMode = mode === 'stick' ? 'stick' : 'drag';
+      clearInputState();
+      saveSettings();
+    },
+    touchButtons() {
+      return JSON.parse(JSON.stringify(TOUCH));
     },
     forceSector(n) {
       sector = n;

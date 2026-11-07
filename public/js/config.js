@@ -38,6 +38,11 @@
       levels: [{ dmg: 9 }, { dmg: 13 }, { dmg: 17 }]
     },
     graze: { score: 10, sparkChance: 0.7 },
+    input: {
+      // Floating stick: movement starts wherever the finger lands.
+      stickRadius: 56,
+      stickDead: 0.12
+    },
     sector: {
       firstBoss: 55,
       bossStep: 3,
@@ -282,7 +287,9 @@
     music: CONFIG.audio.music,
     sfx: CONFIG.audio.sfx,
     shake: true,
-    hitbox: true
+    hitbox: true,
+    autoFire: true,
+    controlMode: 'drag'
   };
 
   Object.assign(TS, {
