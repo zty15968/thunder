@@ -150,6 +150,77 @@ async function main() {
     })()`);
     assert('later sectors spawn extra enemies', laterSim.spawns > waveSim.spawns, laterSim);
 
+    // Local profile and leaderboard.
+    s = await snap();
+    assert('fresh profile starts empty',
+      s.profile.runs === 0 && s.profile.localScores === 0 && s.profile.bestScore === 0,
+      s.profile);
+    assert('leaderboard defaults to the local board',
+      s.leaderboard.endpoint === '' && s.leaderboard.source === 'local', s.leaderboard);
+
+    const nick = await evalJS('TS.debug.setNick("  雷霆  王牌  ")');
+    assert('nickname is trimmed and saved', nick === '雷霆 王牌', nick);
+    const rec = await evalJS('TS.debug.recordRun({score:43210, sector:4, bossKills:2, graze:88, time:210})');
+    assert('run is recorded with the player nickname',
+      rec.newBest === true && !!rec.entry && rec.entry.name === '雷霆 王牌', rec);
+    s = await snap();
+    assert('profile keeps best run and local score',
+      s.profile.bestScore === 43210 && s.profile.bestSector === 4 && s.profile.localScores === 1,
+      s.profile);
+    const localRows = await evalJS('TS.debug.leaderboardRows()');
+    assert('local leaderboard is sorted and named',
+      localRows.length === 1 && localRows[0].score === 43210 && localRows[0].name === '雷霆 王牌',
+      localRows);
+
+    // Keyboard access, DOM rendering, and Escape to close.
+    await key('KeyL', 'l', 76);
+    await sleep(250);
+    s = await snap();
+    assert('L opens the leaderboard from the title',
+      s.leaderboard.open === true && s.state === 'title', s.leaderboard);
+    const boardDom = await evalJS(`(() => ({
+      hidden: document.getElementById('lb').hidden,
+      rows: document.querySelectorAll('#lb-list .lb-row').length,
+      first: (document.querySelector('#lb-list .lb-name') || {}).textContent,
+      nick: document.getElementById('lb-nick').value
+    }))()`);
+    assert('overlay renders the local record',
+      boardDom.hidden === false && boardDom.rows === 1 &&
+      boardDom.first === '雷霆 王牌' && boardDom.nick === '雷霆 王牌', boardDom);
+    await key('Escape', 'Escape', 27);
+    await sleep(200);
+    s = await snap();
+    assert('Escape closes the leaderboard', s.leaderboard.open === false, s.leaderboard);
+
+    // Canvas button in the top-right corner must not start the game.
+    const titleRect = await evalJS('(() => { const r = document.getElementById("game").getBoundingClientRect(); return {x:r.left,y:r.top,w:r.width,h:r.height}; })()');
+    const lbX = titleRect.x + titleRect.w * ((480 - 51) / 480);
+    const lbY = titleRect.y + titleRect.h * (29 / 720);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: lbX, y: lbY, button: 'left', buttons: 1, clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: lbX, y: lbY, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(250);
+    s = await snap();
+    assert('title leaderboard button opens without starting',
+      s.leaderboard.open === true && s.state === 'title',
+      { open: s.leaderboard.open, state: s.state });
+    await evalJS('TS.debug.closeLeaderboard()');
+
+    // Failed uploads queue for a later retry instead of losing the score.
+    const offline = await evalJS(`(async () => {
+      const realFetch = window.fetch;
+      window.fetch = () => Promise.reject(new Error('simulated offline'));
+      TS.Leaderboard.setEndpoint('http://127.0.0.1:65531');
+      const r = await TS.Leaderboard.submit({
+        id: 'offline-test-1', name: 'tester', score: 777,
+        sector: 1, bossKills: 0, graze: 0, time: 10
+      });
+      TS.Leaderboard.setEndpoint('');
+      window.fetch = realFetch;
+      return { r, pending: TS.Profile.pending().length };
+    })()`);
+    assert('failed uploads are queued for retry',
+      offline.r.ok === false && offline.r.queued === true && offline.pending === 1, offline);
+
     await key('Enter', 'Enter', 13);
     await sleep(900);
     s = await snap();

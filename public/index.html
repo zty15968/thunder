@@ -18,12 +18,30 @@
 <body>
 <div id="wrap">
   <canvas id="game" width="480" height="720"></canvas>
-  <div id="tip">方向键 / WASD 移动 · Shift 聚焦 · 空格 炸弹 · P 暂停 · M 静音</div>
+  <div id="tip">方向键 / WASD 移动 · Shift 聚焦 · 空格 炸弹 · P 暂停 · M 静音 · L 排行榜</div>
+</div>
+<div id="lb" class="lb-overlay" hidden>
+  <div class="lb-panel" role="dialog" aria-modal="true" aria-labelledby="lb-heading">
+    <div class="lb-head">
+      <span id="lb-heading">排行榜</span>
+      <button id="lb-close" type="button" aria-label="关闭排行榜">✕</button>
+    </div>
+    <div id="lb-status" class="lb-status">本地排行榜</div>
+    <ol id="lb-list" class="lb-list"></ol>
+    <div class="lb-name-row">
+      <label for="lb-nick">昵称</label>
+      <input id="lb-nick" type="text" maxlength="12" autocomplete="nickname" spellcheck="false" placeholder="输入昵称">
+      <button id="lb-save" type="button">保存</button>
+    </div>
+    <button id="lb-refresh" class="lb-refresh" type="button">刷新排行榜</button>
+  </div>
 </div>
 <button id="install" type="button" hidden>安装到桌面</button>
 <script src="js/config.js"></script>
+<script src="js/profile.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/waves.js"></script>
+<script src="js/leaderboard.js"></script>
 <script src="thunder_strike.js"></script>
 <script src="js/pwa.js"></script>
 </body>

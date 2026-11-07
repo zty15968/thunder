@@ -117,6 +117,20 @@ async function main() {
 
     let s = await snap();
     assert('title before tap', s.state === 'title', s.state);
+
+    await tap(429, 29);
+    const lbOpen = await evalJS('!document.getElementById("lb").hidden');
+    assert('touch leaderboard button opens the overlay', lbOpen === true, lbOpen);
+    const lbPanel = await evalJS(`(() => {
+      const r = document.querySelector('.lb-panel').getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight };
+    })()`);
+    assert('leaderboard panel fits the mobile viewport',
+      lbPanel.w <= lbPanel.vw && lbPanel.h <= lbPanel.vh, lbPanel);
+    await evalJS('TS.debug.closeLeaderboard()');
+    s = await snap();
+    assert('closing the overlay returns to title', s.state === 'title', s.state);
+
     await tap(240, 400);
     s = await snap();
     assert('touch tap starts game', s.state === 'play', s.state);

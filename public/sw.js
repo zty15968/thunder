@@ -1,6 +1,6 @@
 'use strict';
 // Offline shell for Thunder Strike. Bump VERSION together with TS.VERSION.
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
 const CACHE = 'thunder-strike-v' + VERSION;
 
 const PRECACHE = [
@@ -9,8 +9,10 @@ const PRECACHE = [
   './thunder_strike.css',
   './thunder_strike.js',
   './js/config.js',
+  './js/profile.js',
   './js/audio.js',
   './js/waves.js',
+  './js/leaderboard.js',
   './js/pwa.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

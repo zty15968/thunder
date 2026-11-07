@@ -23,6 +23,7 @@
 | 炸弹 | 空格 | 右下「炸弹」按钮 |
 | 暂停 | P / Esc | 右上角暂停按钮 |
 | 静音 | M | 暂停 → 设置 |
+| 排行榜 | L | 标题 / 结算右上角按钮 |
 | 开始 / 重开 | Enter / R | 点击画面 |
 
 自动开火默认开启。暂停菜单 → 设置中可以关闭自动开火、切换「拖拽移动 / 虚拟摇杆」，设置会自动保存。
@@ -48,17 +49,20 @@
 public/index.html           入口，按顺序加载脚本
 public/thunder_strike.css   画布缩放、移动端与触屏样式
 public/thunder_strike.js    游戏主循环、实体、碰撞、Boss、渲染、UI
-public/js/config.js         全部数值配置（玩家/武器/敌人/Boss/星区/难度）
+public/js/config.js         全部数值配置（玩家/武器/敌人/Boss/星区/难度/档案/排行榜）
+public/js/profile.js        本地档案：昵称、最高分、统计、本地榜、离线补交队列
 public/js/audio.js          WebAudio 音效与程序化 BGM
 public/js/waves.js          数据驱动的波次脚本与 WaveDirector
+public/js/leaderboard.js    排行榜覆盖层（本地榜 / 可选 Cloudflare 全球榜）
 public/js/pwa.js            Service Worker 注册、安装入口
 public/sw.js                离线缓存
 public/manifest.webmanifest PWA 清单
 public/icons/               应用图标（由 tools/make-icons.ps1 生成）
+server/                     Cloudflare Worker + KV 排行榜（可选）
 tools/                      本地服务器、检查、打包与 headless 回归测试
 ```
 
-加载顺序必须是 `config.js` → `audio.js` → `waves.js` → `thunder_strike.js` → `pwa.js`，因为后两者依赖 `window.TS` 命名空间。新增脚本时同步更新入口与 `tools/check.js`。
+加载顺序必须是 `config.js` → `profile.js` → `audio.js` → `waves.js` → `leaderboard.js` → `thunder_strike.js` → `pwa.js`，因为后四者依赖 `window.TS` 命名空间。新增脚本时同步更新入口与 `tools/check.js`。
 
 ## 波次与 Boss
 
@@ -82,10 +86,41 @@ tools/                      本地服务器、检查、打包与 headless 回归
 - `WAVE_DEFS`（`public/js/waves.js`）：每波的时间轴、敌人编队与解锁条件
 - `CONFIG.difficulty`：随 sector 增长的难度曲线
 - `CONFIG.drops` / `CONFIG.carrier`：随机掉落概率、保底击杀数、掉落权重与补给舰间隔
+- `CONFIG.profile`：本地档案的存储键、昵称长度上限、本地榜与补交队列容量
+- `CONFIG.leaderboard`：远程排行榜地址、TOP 数量、请求超时
 
 修改配置不需要动逻辑代码。当前掉落设计刻意偏克制：普通小兵约每 100 次击杀产出 7 个道具（含数据核心），避免火力成长过快把杂兵战变成碾压。
 
 武器细节：拾取异色火力会先升级备用武器，等备用武器等级追平当前武器后才会自动切换，因此稀有掉落不会造成突然的火力降级。
+
+## 档案与排行榜
+
+- 昵称、最高分、累计击杀、擦弹、游玩时长与本地 TOP 50 保存在 `localStorage`（`CONFIG.profile.key`），清空浏览器数据才会丢失。
+- 排行榜入口：标题 / 结算画面右上角「排行榜」，或暂停菜单 → 设置 → 「排行榜 / 昵称」。键盘按 `L` 也能打开。
+- 每局结束自动记入本地榜；本地榜始终可用，断网或 `file://` 打开都不受影响。
+- 未配置远程地址时显示「本地排行榜」；配置后优先显示全球榜，请求失败自动回退本地榜。
+- 上传失败的分数会进入待补交队列（最多 20 条），联网或下次打开排行榜时自动重试，重试使用成绩 ID 去重。
+
+### 可选：Cloudflare Worker 全球榜
+
+`server/` 内是一个零依赖的 Worker，用 KV 保存全时间总榜 TOP 100，读取时默认返回 TOP 50。
+
+```powershell
+cd server
+npx wrangler login
+npx wrangler kv namespace create SCORES   # 把返回的 id 填进 wrangler.toml
+npx wrangler deploy
+```
+
+部署完成后，把 Worker 地址写入 `public/js/config.js`：
+
+```js
+leaderboard: {
+  endpoint: 'https://thunder-strike-leaderboard.example.workers.dev'
+}
+```
+
+然后重新发布静态站点。未配置内置昵称的玩家在首次上传后会弹出昵称输入框。详细 API 与本地预览见 `server/README.md`。
 
 ## 代码约定
 
@@ -98,7 +133,8 @@ tools/                      本地服务器、检查、打包与 headless 回归
 ## 测试
 
 ```powershell
-npm run check        # 语法 / 资源引用 / 版本一致性 / PWA 缓存清单
+npm run check        # 语法 / 资源引用 / 版本一致性 / PWA 缓存清单 / Worker
+npm run test:worker  # Worker 排行榜 API 单测（内存 KV）
 npm run test:desktop # headless Edge 桌面回归（含离线与 file:// 验证）
 npm run test:mobile  # headless Edge 390×844@3x 触屏回归
 npm test             # 全部
@@ -133,4 +169,4 @@ npm run package:web
 
 ## 调试
 
-`window.TS.debug` 暴露了只读快照与少量测试入口（`snapshot`、`spawnBoss`、`hurtBoss`、`killBossParts`、`pauseRows`、`setControlMode` 等），用于自动化冒烟测试，不影响正常游玩。
+`window.TS.debug` 暴露了只读快照与少量测试入口（`snapshot`、`spawnBoss`、`hurtBoss`、`killBossParts`、`pauseRows`、`setControlMode`、`openLeaderboard`、`setNick`、`recordRun`、`setLeaderboardEndpoint` 等），用于自动化冒烟测试，不影响正常游玩。

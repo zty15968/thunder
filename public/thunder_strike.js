@@ -65,7 +65,7 @@
   }
 
   let hiScore = 0;
-  try { hiScore = +localStorage.getItem(CONFIG.hiScoreKey) || 0; } catch (e) { /* ignore */ }
+  try { hiScore = TS.Profile.current().bestScore || 0; } catch (e) { /* ignore */ }
 
   // -------------------------------------------------------------------------
   // Top-level state
@@ -278,6 +278,12 @@
     pause: { x: W - 20, y: 76, r: 15 }
   };
 
+  // Canvas button shown on the title and game-over screens.
+  const LB_BTN = { x: W - 88, y: 16, w: 74, h: 26 };
+  const hitLBButton = (x, y) =>
+    x >= LB_BTN.x && x <= LB_BTN.x + LB_BTN.w &&
+    y >= LB_BTN.y && y <= LB_BTN.y + LB_BTN.h;
+
   const fireHeld = () => settings.autoFire ||
     Input.fireTouch || Input.firePointerId !== null ||
     keys.has('KeyJ') || keys.has('KeyZ');
@@ -299,6 +305,17 @@
   }
 
   function onKeyDown(e) {
+    const tag = e.target && e.target.tagName;
+    if (TS.Leaderboard && TS.Leaderboard.isOpen()) {
+      // The overlay owns its own controls; let inputs and buttons behave.
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' &&
+        (e.code === 'Escape' || e.code === 'KeyL')) {
+        TS.Leaderboard.close();
+      }
+      return;
+    }
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
     if (PREVENT.has(e.code)) e.preventDefault();
     Audio.init();
     Audio.resume();
@@ -319,6 +336,8 @@
       if (state === 'play' && !paused) tryBomb();
     } else if (e.code === 'KeyM') {
       toggleMute();
+    } else if (e.code === 'KeyL') {
+      if (state !== 'play' || paused) TS.Leaderboard.open();
     }
     keys.add(e.code);
   }
@@ -333,11 +352,11 @@
     if (e.pointerType === 'touch') Input.touchMode = true;
     const p = pointerPos(e);
 
-    if (state === 'title') {
-      startGame();
-      return;
-    }
-    if (state === 'over') {
+    if (state === 'title' || state === 'over') {
+      if (hitLBButton(p.x, p.y)) {
+        TS.Leaderboard.open();
+        return;
+      }
       startGame();
       return;
     }
@@ -513,6 +532,7 @@
   // Lifecycle
   // -------------------------------------------------------------------------
   function startGame() {
+    if (TS.Leaderboard) TS.Leaderboard.close();
     pBullets.length = 0;
     eBullets.length = 0;
     enemies.length = 0;
@@ -603,11 +623,24 @@
     finalBossKills = bossKills;
     finalSector = sector;
     finalGraze = player.graze;
-    if (score > hiScore) {
-      hiScore = score;
-      newRecord = true;
-      try { localStorage.setItem(CONFIG.hiScoreKey, String(hiScore)); } catch (e) { /* ignore */ }
+
+    const run = TS.Profile.recordRun({
+      score,
+      sector,
+      bossKills,
+      graze: player.graze,
+      time: gameTime
+    });
+    hiScore = Math.max(hiScore, TS.Profile.current().bestScore || 0);
+    newRecord = run.newBest;
+
+    if (run.entry && TS.Leaderboard.endpoint()) {
+      TS.Leaderboard.submit(run.entry);
+      if (!TS.Profile.getName()) {
+        setTimeout(() => TS.Leaderboard.open({ focusName: true }), 900);
+      }
     }
+
     state = 'over';
     paused = false;
     Audio.beamOff();
@@ -2710,6 +2743,21 @@
     ctx.textBaseline = 'alphabetic';
   }
 
+  function drawLBButton() {
+    rr(LB_BTN.x, LB_BTN.y, LB_BTN.w, LB_BTN.h, 7);
+    ctx.fillStyle = 'rgba(10,20,38,.72)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(110,170,255,.32)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 11px ' + FONT;
+    ctx.fillStyle = '#cfe3ff';
+    ctx.fillText('排行榜 L', LB_BTN.x + LB_BTN.w / 2, LB_BTN.y + LB_BTN.h / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+
   function drawTitleScreen() {
     ctx.fillStyle = 'rgba(2,5,14,.58)';
     ctx.fillRect(0, 0, W, H);
@@ -2774,9 +2822,13 @@
     ctx.font = '13px ' + FONT;
     ctx.fillStyle = '#d8b04a';
     ctx.fillText('最高纪录 ' + hiScore, W / 2, 600);
+    ctx.font = '12px ' + FONT;
+    ctx.fillStyle = '#9fb3d4';
+    ctx.fillText('飞行员 ' + (TS.Profile.getName() || '未设置昵称'), W / 2, 620);
     ctx.font = '11px ' + MONO;
     ctx.fillStyle = 'rgba(140,170,210,.55)';
-    ctx.fillText('ENDLESS SECTOR MODE · v' + TS.VERSION, W / 2, 630);
+    ctx.fillText('ENDLESS SECTOR MODE · v' + TS.VERSION, W / 2, 644);
+    drawLBButton();
   }
 
   // -------------------------------------------------------------------------
@@ -2820,7 +2872,8 @@
         { id: 'hitbox', label: '判定点', type: 'toggle', value: settings.hitbox },
         { id: 'mute', label: '静音', type: 'toggle', value: settings.muted },
         { id: 'control', label: '触屏操作', type: 'choice', value: settings.controlMode },
-        { id: 'autoFire', label: '自动开火', type: 'toggle', value: settings.autoFire }
+        { id: 'autoFire', label: '自动开火', type: 'toggle', value: settings.autoFire },
+        { id: 'leaderboard', label: '排行榜 / 昵称', type: 'button' }
       ];
       if (canFullscreen()) {
         rows.push({ id: 'fullscreen', label: '全屏模式', type: 'toggle', value: isFullscreen() });
@@ -2881,6 +2934,7 @@
       if (r.id === 'settings') { pausePage = 'settings'; return; }
       if (r.id === 'back') { pausePage = 'main'; return; }
       if (r.id === 'quit') { quitToTitle(); return; }
+      if (r.id === 'leaderboard') { TS.Leaderboard.open(); return; }
       if (r.id === 'fullscreen') { toggleFullscreen(); return; }
       if (r.id === 'shake') { settings.shake = !settings.shake; saveSettings(); return; }
       if (r.id === 'hitbox') { settings.hitbox = !settings.hitbox; saveSettings(); return; }
@@ -3003,7 +3057,8 @@
     }
     ctx.font = '12px ' + FONT;
     ctx.fillStyle = 'rgba(160,190,225,.6)';
-    ctx.fillText('R 重新开始', W / 2, 522);
+    ctx.fillText(Input.touchMode ? 'R 重新开始 · 右上角查看排行榜' : 'R 重新开始 · L 查看排行榜', W / 2, 522);
+    drawLBButton();
   }
 
   // -------------------------------------------------------------------------
@@ -3126,6 +3181,19 @@
           parts: boss.parts.map(p => ({ id: p.id, alive: p.alive }))
         } : null,
         wave: director.snapshot(),
+        profile: (() => {
+          const p = TS.Profile.current();
+          return {
+            name: p.name, bestScore: p.bestScore, bestSector: p.bestSector,
+            runs: p.runs, localScores: p.localScores.length, pending: p.pending.length
+          };
+        })(),
+        leaderboard: {
+          endpoint: TS.Leaderboard.endpoint(),
+          source: TS.Leaderboard.source(),
+          open: TS.Leaderboard.isOpen(),
+          rows: TS.Leaderboard.rows().length
+        },
         audio: {
           ready: !!Audio.ac,
           musicMode: Audio._music.mode,
@@ -3160,6 +3228,38 @@
     },
     touchButtons() {
       return JSON.parse(JSON.stringify(TOUCH));
+    },
+    openLeaderboard(opts) {
+      TS.Leaderboard.open(opts);
+    },
+    closeLeaderboard() {
+      TS.Leaderboard.close();
+    },
+    setNick(name) {
+      return TS.Leaderboard.setNick(name);
+    },
+    profile() {
+      return TS.Profile.current();
+    },
+    recordRun(run) {
+      return TS.Profile.recordRun(run);
+    },
+    leaderboardRows() {
+      return TS.Leaderboard.rows();
+    },
+    leaderboardStatus() {
+      return TS.Leaderboard.statusText();
+    },
+    setLeaderboardEndpoint(url) {
+      return TS.Leaderboard.setEndpoint(url);
+    },
+    resetProfile() {
+      TS.Profile.reset();
+      hiScore = 0;
+      return TS.Profile.current();
+    },
+    submitScore(entry) {
+      return TS.Leaderboard.submit(entry);
     },
     forceSector(n) {
       sector = n;

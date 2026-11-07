@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const TS = window.TS = window.TS || {};
-  const VERSION = '0.9.0';
+  const VERSION = '0.9.1';
 
   // ---------------------------------------------------------------------------
   // Tunables. Keep gameplay numbers here so balance changes don't touch logic.
@@ -99,7 +99,22 @@
     },
     audio: { master: 1, music: 0.52, sfx: 0.78, bpm: 146 },
     saveKey: 'thunder_strike_settings_v3',
-    hiScoreKey: 'thunder_strike_hiscore_v3'
+    hiScoreKey: 'thunder_strike_hiscore_v3',
+    profile: {
+      key: 'thunder_strike_profile_v1',
+      version: 1,
+      nameMax: 12,
+      maxLocalScores: 50,
+      maxPending: 20
+    },
+    leaderboard: {
+      // Leave empty to use the local (offline) board. Set this to the deployed
+      // Cloudflare Worker origin, e.g. 'https://thunder-strike.example.workers.dev'.
+      endpoint: '',
+      limit: 50,
+      timeout: 6000,
+      refreshMs: 60000
+    }
   };
 
   const WEAPONS = {

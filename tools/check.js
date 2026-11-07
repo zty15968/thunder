@@ -20,7 +20,9 @@ function walk(dir, out = []) {
   return out;
 }
 
-const files = walk(PUBLIC).concat(walk(path.join(ROOT, 'tools')));
+const files = walk(PUBLIC)
+  .concat(walk(path.join(ROOT, 'tools')))
+  .concat(walk(path.join(ROOT, 'server')));
 
 for (const file of files.filter(f => f.endsWith('.js'))) {
   const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });

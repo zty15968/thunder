@@ -10,3 +10,25 @@ canvas{display:block;border-radius:6px;box-shadow:0 0 50px rgba(70,140,255,.18),
 #install.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
 #install[hidden]{display:none}
 #install:active{background:rgba(30,70,130,.95)}
+.lb-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:calc(14px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom));background:rgba(2,5,14,.84);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.lb-overlay[hidden]{display:none}
+.lb-panel{width:min(92vw,420px);max-height:min(86vh,640px);display:flex;flex-direction:column;gap:10px;box-sizing:border-box;padding:16px 16px 14px;border-radius:14px;border:1px solid rgba(110,170,255,.35);background:linear-gradient(180deg,rgba(12,24,44,.98),rgba(6,12,24,.98));box-shadow:0 24px 70px rgba(0,0,0,.68);color:#dbe8fb;font:13px "Microsoft YaHei",system-ui,sans-serif}
+.lb-head{display:flex;align-items:center;justify-content:space-between;font-size:18px;font-weight:700;color:#fff;letter-spacing:.08em}
+#lb-close{width:30px;height:30px;border-radius:8px;border:1px solid rgba(140,190,255,.3);background:rgba(10,20,38,.8);color:#cfe3ff;font-size:14px;line-height:1;cursor:pointer}
+.lb-status{font-size:11px;color:#8fe3ff;letter-spacing:.04em;min-height:14px}
+.lb-list{flex:1;min-height:0;max-height:52vh;overflow-y:auto;overscroll-behavior:contain;margin:0;padding:0;list-style:none;border-top:1px solid rgba(110,170,255,.14)}
+.lb-row{display:grid;grid-template-columns:30px 1fr auto;grid-template-rows:auto auto;column-gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid rgba(110,170,255,.09)}
+.lb-rank{grid-row:1 / span 2;align-self:center;text-align:center;font:700 12px Consolas,monospace;color:#7f93b5}
+.lb-rank.lb-top{color:#ffd23e;font-size:14px}
+.lb-name{grid-column:2;grid-row:1;font-weight:700;color:#e7f1ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-score{grid-column:3;grid-row:1;text-align:right;font:700 13px Consolas,monospace;color:#ffd23e}
+.lb-meta{grid-column:2 / span 2;grid-row:2;font-size:10px;color:rgba(160,190,225,.6)}
+.lb-empty{padding:18px 4px;color:rgba(160,190,225,.65);font-size:12px;text-align:center}
+.lb-name-row{display:flex;align-items:center;gap:8px}
+.lb-name-row label{font-size:11px;color:#9fb3d4;flex:0 0 auto}
+#lb-nick{flex:1;min-width:0;padding:8px 10px;border-radius:7px;border:1px solid rgba(110,170,255,.32);background:rgba(4,10,22,.9);color:#fff;font:600 13px "Microsoft YaHei",system-ui,sans-serif;outline:none}
+#lb-nick:focus{border-color:rgba(140,220,255,.8);box-shadow:0 0 0 2px rgba(80,180,255,.18)}
+#lb-save,#lb-refresh{padding:8px 12px;border-radius:7px;border:1px solid rgba(120,180,255,.35);background:rgba(30,70,130,.55);color:#dceaff;font:700 12px "Microsoft YaHei",system-ui,sans-serif;cursor:pointer}
+#lb-refresh{background:rgba(10,20,38,.75);color:#9fb3d4;font-weight:600}
+#lb-save:active,#lb-refresh:active,#lb-close:active{background:rgba(50,110,190,.7)}
+@media (max-height:520px){.lb-list{max-height:36vh}}
