@@ -1,0 +1,8 @@
+html,body{margin:0;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:#04060d radial-gradient(1200px 700px at 50% 30%,#0a1226,#04060d);font-family:"Microsoft YaHei",system-ui,sans-serif}
+#wrap{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:100vw}
+canvas{display:block;border-radius:6px;box-shadow:0 0 50px rgba(70,140,255,.18),inset 0 0 0 1px #14203c;background:#000;width:min(96vw,calc(94vh*.6667));height:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+@supports (height:100dvh){canvas{width:min(96vw,calc(94dvh*.6667))}}
+#tip{color:#5f7396;font-size:13px;letter-spacing:.05em;user-select:none;text-align:center;padding:0 10px}
+@media (pointer:coarse),(max-width:600px){#tip{display:none}body{gap:0}}
+@media (display-mode:standalone){#tip{display:none}body{gap:0}}
