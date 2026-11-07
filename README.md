@@ -35,6 +35,13 @@
 - 支持刘海屏安全区（`viewport-fit=cover` + `safe-area-inset-*`），可添加到主屏幕后以独立窗口运行。
 - 已禁用页面缩放、滚动回弹与长按菜单，避免拖拽时误触。
 
+## 离线与安装（PWA）
+
+- `public/manifest.webmanifest` 与 `public/sw.js` 提供可安装、可离线的外壳；首次在线打开后即可断网游玩。
+- Service Worker 只在 `https://` 或 `localhost` 下注册；直接双击 `file://` 打开时自动跳过，不影响单机体验。
+- Chrome / Edge 会显示「安装到桌面」按钮；iOS Safari 可用「分享 → 添加到主屏幕」。
+- Service Worker 采用网络优先、缓存兜底：在线时总能拿到最新文件，离线时回退到缓存。
+
 ## 文件结构
 
 ```
@@ -43,10 +50,14 @@ public/thunder_strike.css   画布缩放、移动端与触屏样式
 public/thunder_strike.js    游戏主循环、实体、碰撞、Boss、渲染、UI
 public/js/config.js         全部数值配置（玩家/武器/敌人/Boss/星区/难度）
 public/js/audio.js          WebAudio 音效与程序化 BGM
-tools/                      本地静态服务器、语法检查与 headless 回归测试
+public/js/pwa.js            Service Worker 注册、安装入口
+public/sw.js                离线缓存
+public/manifest.webmanifest PWA 清单
+public/icons/               应用图标（由 tools/make-icons.ps1 生成）
+tools/                      本地服务器、检查、打包与 headless 回归测试
 ```
 
-加载顺序必须是 `config.js` → `audio.js` → `thunder_strike.js`，因为后两者依赖 `window.TS` 命名空间。新增脚本时同步更新入口与 `tools/check.js`。
+加载顺序必须是 `config.js` → `audio.js` → `thunder_strike.js` → `pwa.js`，因为后两者依赖 `window.TS` 命名空间。新增脚本时同步更新入口与 `tools/check.js`。
 
 ## 调整数值
 
@@ -75,14 +86,39 @@ tools/                      本地静态服务器、语法检查与 headless 回
 ## 测试
 
 ```powershell
-npm run check        # 语法 / 资源引用 / 版本一致性
-npm run test:desktop # headless Edge 桌面回归（约 50 项）
+npm run check        # 语法 / 资源引用 / 版本一致性 / PWA 缓存清单
+npm run test:desktop # headless Edge 桌面回归（含离线与 file:// 验证）
 npm run test:mobile  # headless Edge 390×844@3x 触屏回归
 npm test             # 全部
 ```
 
 测试使用本机 Edge/Chrome 的 CDP 接口，无 npm 依赖。可通过 `EDGE_PATH` 指定浏览器路径，`SMOKE_URL` 指向已运行的服务。
 
+## 发布
+
+### GitHub Pages
+
+1. 推送到 GitHub 的 `main` 分支。
+2. 仓库 Settings → Pages → Build and deployment → Source 选择 **GitHub Actions**。
+3. `.github/workflows/pages.yml` 会自动把 `public/` 发布为站点。
+4. manifest、Service Worker 与资源全部使用相对路径，部署在用户主页子路径下也不需要改代码。
+
+### itch.io
+
+```powershell
+npm run package:web
+```
+
+上传 `dist/thunder-strike-web.zip`，项目类型选 HTML，勾选 “This file will be played in the browser”。建议设为 480×720 竖屏、开启移动端支持与全屏按钮。itch 的 iframe 环境可能禁用 Service Worker，但游戏本身仍可正常运行。
+
+### 版本号
+
+发布前同步三处，`npm run check` 会校验：
+
+- `package.json` 的 `version`
+- `public/js/config.js` 的 `TS.VERSION`
+- `public/sw.js` 的 `VERSION`（同时会生成新的缓存名，强制客户端更新离线资源）
+
 ## 调试
 
-`window.TS.debug` 暴露了只读快照与少量测试入口（`snapshot`、`spawnBoss`、`hurtBoss`、`killBossParts`、`pauseRows` 等），用于自动化冒烟测试，不影响正常游玩。
+`window.TS.debug` 暴露了只读快照与少量测试入口（`snapshot`、`spawnBoss`、`hurtBoss`、`killBossParts`、`pauseRows`、`setControlMode` 等），用于自动化冒烟测试，不影响正常游玩。

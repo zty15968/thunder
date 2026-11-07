@@ -78,6 +78,27 @@ async function main() {
       await evalJS('!!window.TS && !!TS.CONFIG && !!TS.Audio && !!TS.debug'));
     assert('version is exposed', await evalJS('typeof TS.VERSION === "string" && TS.VERSION.length > 0'), await evalJS('TS.VERSION'));
 
+    // PWA wiring: manifest, service worker, precache shell.
+    assert('manifest is linked',
+      await evalJS('!!document.querySelector(\'link[rel="manifest"]\')'));
+    assert('install button exists',
+      await evalJS('!!document.getElementById("install")'));
+    const swState = await evalJS(`Promise.race([
+      navigator.serviceWorker.ready.then(r => ({ active: !!r.active, scope: r.scope })),
+      new Promise(r => setTimeout(() => r({ timeout: true }), 5000))
+    ])`);
+    assert('service worker becomes active', swState.active === true, swState);
+    const cacheState = await evalJS(`(async () => {
+      const keys = await caches.keys();
+      const name = keys.find(k => k.startsWith('thunder-strike-v'));
+      if (!name) return { keys };
+      const cache = await caches.open(name);
+      return { name, entries: (await cache.keys()).length };
+    })()`);
+    assert('offline cache is populated',
+      !!cacheState.name && cacheState.name === 'thunder-strike-v' + (await evalJS('TS.VERSION')) &&
+      cacheState.entries >= 10, cacheState);
+
     let s = await snap();
     assert('starts on title', s.state === 'title', s.state);
     await shot('01-title.png');
@@ -88,6 +109,9 @@ async function main() {
     assert('Enter starts play', s.state === 'play', s.state);
     assert('player is alive', s.player.lives === 3 && !s.player.dead, s.player);
     assert('spread auto-fire creates bullets', s.pBullets > 0, s.pBullets);
+    assert('install button stays off the playfield',
+      await evalJS('!document.getElementById("install").classList.contains("show")'),
+      await evalJS('document.getElementById("install").hidden'));
     assert('audio engine starts sector music',
       s.audio.ready && s.audio.musicPlaying && s.audio.musicMode === 'sector', s.audio);
 
@@ -352,6 +376,19 @@ async function main() {
     await sleep(2500);
     s = await snap();
     console.log('final snapshot', JSON.stringify(s));
+
+    // Offline reload must be served from the service worker cache.
+    await cdp.send('Network.enable');
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0
+    });
+    await openPage(cdp, baseUrl);
+    await sleep(1000);
+    assert('offline reload boots from cache',
+      await evalJS('!!window.TS && !!TS.debug && TS.debug.snapshot().state === "title" && navigator.onLine === false'));
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1
+    });
 
     // The game must still run when opened directly from disk (no server).
     await openPage(cdp, pathToFileURL(path.join(ROOT, 'index.html')).href);

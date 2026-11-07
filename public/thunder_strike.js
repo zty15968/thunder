@@ -2758,7 +2758,7 @@
     ctx.fillText('最高纪录 ' + hiScore, W / 2, 600);
     ctx.font = '11px ' + MONO;
     ctx.fillStyle = 'rgba(140,170,210,.55)';
-    ctx.fillText('ENDLESS SECTOR MODE', W / 2, 630);
+    ctx.fillText('ENDLESS SECTOR MODE · v' + TS.VERSION, W / 2, 630);
   }
 
   // -------------------------------------------------------------------------
@@ -3083,6 +3083,8 @@
   // -------------------------------------------------------------------------
   // Debug hooks. Used by the headless smoke test; safe to leave in place.
   // -------------------------------------------------------------------------
+  TS.getState = () => state;
+
   TS.debug = {
     snapshot() {
       return {

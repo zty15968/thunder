@@ -8,6 +8,8 @@
     "check": "node tools/check.js",
     "test": "node tools/check.js && node tools/smoke-desktop.js && node tools/smoke-mobile.js",
     "test:desktop": "node tools/smoke-desktop.js",
-    "test:mobile": "node tools/smoke-mobile.js"
+    "test:mobile": "node tools/smoke-mobile.js",
+    "package:web": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package.ps1",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/make-icons.ps1"
   }
 }

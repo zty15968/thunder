@@ -53,6 +53,52 @@ else if (versionMatch[1] !== pkg.version) {
   failures.push('version mismatch: package.json ' + pkg.version + ' vs TS.VERSION ' + versionMatch[1]);
 }
 
+// Manifest must be valid JSON and point at real icon files.
+const manifestPath = path.join(PUBLIC, 'manifest.webmanifest');
+if (!fs.existsSync(manifestPath)) {
+  failures.push('missing public/manifest.webmanifest');
+} else {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    for (const key of ['name', 'short_name', 'start_url', 'scope', 'display']) {
+      if (!manifest[key]) failures.push('manifest missing ' + key);
+    }
+    const icons = manifest.icons || [];
+    const sizes = new Set(icons.map(i => i.sizes));
+    for (const need of ['192x192', '512x512']) {
+      if (!sizes.has(need)) failures.push('manifest missing ' + need + ' icon');
+    }
+    for (const icon of icons) {
+      const file = path.resolve(PUBLIC, icon.src);
+      if (!fs.existsSync(file)) failures.push('missing manifest icon: ' + icon.src);
+    }
+  } catch (e) {
+    failures.push('manifest is not valid JSON: ' + e.message);
+  }
+}
+
+// Service worker precache must exist and use the current version.
+const swPath = path.join(PUBLIC, 'sw.js');
+if (!fs.existsSync(swPath)) {
+  failures.push('missing public/sw.js');
+} else {
+  const sw = fs.readFileSync(swPath, 'utf8');
+  const swVersion = sw.match(/VERSION\s*=\s*'([^']+)'/);
+  if (!swVersion) failures.push('VERSION not found in public/sw.js');
+  else if (swVersion[1] !== pkg.version) {
+    failures.push('version mismatch: package.json ' + pkg.version + ' vs sw.js ' + swVersion[1]);
+  }
+  const listMatch = sw.match(/PRECACHE\s*=\s*\[([\s\S]*?)\]/);
+  if (!listMatch) {
+    failures.push('PRECACHE list not found in public/sw.js');
+  } else {
+    for (const m of listMatch[1].matchAll(/'([^']+)'/g)) {
+      const target = m[1] === './' ? path.join(PUBLIC, 'index.html') : path.resolve(PUBLIC, m[1]);
+      if (!fs.existsSync(target)) failures.push('missing precache asset: ' + m[1]);
+    }
+  }
+}
+
 if (failures.length) {
   console.error('CHECK FAILED');
   for (const f of failures) console.error(' - ' + f);

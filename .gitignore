@@ -3,4 +3,5 @@ Thumbs.db
 .DS_Store
 *.log
 test-results/
+dist/
 tools/.cache/

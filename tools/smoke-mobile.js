@@ -104,6 +104,15 @@ async function main() {
     const vp = await evalJS(`document.querySelector('meta[name="viewport"]').content`);
     assert('mobile viewport configured for full-bleed play',
       vp.includes('viewport-fit=cover') && vp.includes('user-scalable=no'), vp);
+    assert('manifest linked on mobile',
+      await evalJS('!!document.querySelector(\'link[rel="manifest"]\')'));
+    assert('apple touch icon configured',
+      await evalJS('!!document.querySelector(\'link[rel="apple-touch-icon"]\')'));
+    const swMobile = await evalJS(`Promise.race([
+      navigator.serviceWorker.ready.then(r => ({ active: !!r.active })),
+      new Promise(r => setTimeout(() => r({ timeout: true }), 5000))
+    ])`);
+    assert('service worker active on mobile', swMobile.active === true, swMobile);
     await shot('09-mobile-title.png');
 
     let s = await snap();

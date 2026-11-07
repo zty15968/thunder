@@ -7,8 +7,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="雷霆打击">
+<meta name="application-name" content="雷霆打击">
+<meta name="description" content="太空无尽弹幕小游戏：波次、Boss、擦弹与数据核心连锁。">
 <title>雷霆打击 - Thunder Strike</title>
-<link rel="icon" href="data:,">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="thunder_strike.css">
 </head>
 <body>
@@ -16,8 +20,10 @@
   <canvas id="game" width="480" height="720"></canvas>
   <div id="tip">方向键 / WASD 移动 · Shift 聚焦 · 空格 炸弹 · P 暂停 · M 静音</div>
 </div>
+<button id="install" type="button" hidden>安装到桌面</button>
 <script src="js/config.js"></script>
 <script src="js/audio.js"></script>
 <script src="thunder_strike.js"></script>
+<script src="js/pwa.js"></script>
 </body>
 </html>
