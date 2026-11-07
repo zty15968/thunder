@@ -103,6 +103,53 @@ async function main() {
     assert('starts on title', s.state === 'title', s.state);
     await shot('01-title.png');
 
+    // Wave director: five 13-15s waves, then a boss at roughly 80s.
+    const waveSim = await evalJS(`(() => {
+      const d = new TS.WaveDirector();
+      const dt = 1 / 60;
+      let t = 0;
+      let warningAt = null, bossAt = null, spawns = 0;
+      const starts = [];
+      while (t < 90) {
+        for (const ev of d.update(dt)) {
+          if (ev.type === 'waveStart') starts.push({ t, index: ev.index, name: ev.name });
+          else if (ev.type === 'spawn') spawns++;
+          else if (ev.type === 'bossWarning') warningAt = t;
+          else if (ev.type === 'bossSpawn') bossAt = t;
+        }
+        t += dt;
+      }
+      return { starts, spawns, warningAt, bossAt, phase: d.phase, snapshot: d.snapshot() };
+    })()`);
+    assert('director runs five scripted waves',
+      waveSim.starts.length === 5 && waveSim.starts.every((w, i) => w.index === i),
+      waveSim.starts.map(w => w.name));
+    assert('first wave starts after the grace period',
+      waveSim.starts[0].t >= 2.9 && waveSim.starts[0].t <= 3.2,
+      waveSim.starts[0].t);
+    assert('director spawns a full wave roster', waveSim.spawns >= 60, waveSim.spawns);
+    assert('first boss warning arrives near 80 seconds',
+      waveSim.warningAt >= 77 && waveSim.warningAt <= 79,
+      waveSim.warningAt);
+    assert('first boss spawns shortly after the warning',
+      waveSim.bossAt >= waveSim.warningAt + 2.2 && waveSim.bossAt <= waveSim.warningAt + 2.5,
+      { warningAt: waveSim.warningAt, bossAt: waveSim.bossAt });
+    assert('director ends in boss phase', waveSim.phase === 'boss', waveSim.phase);
+
+    // Later sectors unlock the gated groups and spawn more enemies.
+    const laterSim = await evalJS(`(() => {
+      const d = new TS.WaveDirector();
+      d.reset(4);
+      const dt = 1 / 60;
+      let t = 0, spawns = 0;
+      while (t < 80) {
+        for (const ev of d.update(dt)) if (ev.type === 'spawn') spawns++;
+        t += dt;
+      }
+      return { spawns, sector: d.sector };
+    })()`);
+    assert('later sectors spawn extra enemies', laterSim.spawns > waveSim.spawns, laterSim);
+
     await key('Enter', 'Enter', 13);
     await sleep(900);
     s = await snap();
@@ -114,6 +161,19 @@ async function main() {
       await evalJS('document.getElementById("install").hidden'));
     assert('audio engine starts sector music',
       s.audio.ready && s.audio.musicPlaying && s.audio.musicMode === 'sector', s.audio);
+
+    // Live wave lifecycle: grace, then the first scripted wave spawns enemies.
+    s = await snap();
+    assert('game starts in wave grace phase',
+      s.wave.phase === 'grace' && s.wave.waveCount === 5, s.wave);
+    await evalJS('TS.debug.makeInvincible();');
+    await sleep(3400);
+    s = await snap();
+    assert('first wave starts after grace',
+      s.wave.phase === 'wave' && s.wave.waveIndex === 0, s.wave);
+    assert('wave director spawns live enemies', s.enemies > 0, s.enemies);
+    assert('wave banner names the current script',
+      s.wave.waveName === '前哨突袭', s.wave.waveName);
 
     const x0 = s.player.x;
     await cdp.send('Input.dispatchKeyEvent', {
@@ -193,6 +253,8 @@ async function main() {
     assert('boss spawns with parts',
       !!s.boss && s.boss.id === 'hive' && s.boss.parts.length === 4, s.boss);
     assert('warning overlay cleared on spawn', s.warnT === 0, s.warnT);
+    assert('debug boss spawn parks the director',
+      s.wave.phase === 'boss' && s.wave.sector === 2, s.wave);
     await shot('03-boss.png');
 
     await evalJS('TS.debug.killBossParts();');
@@ -286,6 +348,8 @@ async function main() {
     s = await snap();
     assert('warning phase starts boss music',
       s.warnT > 0 && s.audio.musicMode === 'boss', { warnT: s.warnT, audio: s.audio });
+    assert('warning phase parks the director',
+      s.wave.phase === 'bossWarning' && s.wave.nextBossIn > 0, s.wave);
     await shot('08-warning.png');
     for (let w = 0; w < 25; w++) {
       await sleep(200);
@@ -296,8 +360,10 @@ async function main() {
     await evalJS('TS.debug.makeInvincible(); TS.debug.killBossParts(); TS.debug.hurtBoss(1e9);');
     await sleep(3400);
     s = await snap();
-    assert('natural boss defeat resets sector timer',
-      s.boss === null && s.sector === 2 && s.bossKills === 1, { sector: s.sector, kills: s.bossKills });
+    assert('natural boss defeat resets the wave director',
+      s.boss === null && s.sector === 2 && s.bossKills === 1 &&
+      s.wave.phase === 'grace' && s.wave.sector === 2 && s.wave.nextBossIn > 70,
+      { sector: s.sector, kills: s.bossKills, wave: s.wave });
 
     // Pause menu interactions (pointer mapping, mute toggle, restart).
     await key('KeyP', 'p', 80);

@@ -7,6 +7,7 @@
     BOSS_TYPES, SECTORS, DEFAULT_SETTINGS
   } = TS;
   const Audio = TS.Audio;
+  const director = new TS.WaveDirector();
 
   const cvs = document.getElementById('game');
   const ctx = cvs.getContext('2d');
@@ -87,9 +88,8 @@
   let warnT = 0;
   let bossBannerT = 0;
   let banner = null;          // { text, sub, t, dur }
+  let waveBanner = null;      // { text, sub, t, dur }
   let boss = null;
-  let graceT = CONFIG.sector.grace;
-  let spawnT = 0.65;
   let carrierT = CONFIG.carrier.first;
   let coreChain = 0;
   let coreChainT = 0;
@@ -132,7 +132,6 @@
   const parts = [];
   const rings = [];
   const pops = [];
-  const pendings = [];
   const hazards = [];
 
   const playerLvl = () => player.lv[player.weapon];
@@ -147,7 +146,6 @@
       hp: Math.min(d.hpMax, 1 + d.hpPerSector * (sector - 1)),
       fire: Math.min(d.fireMax, 1 + d.firePerSector * (sector - 1)),
       bulletSpeed: Math.min(d.bulletSpeedMax, d.bulletSpeedBase + d.bulletSpeedPerSector * (sector - 1)),
-      spawn: Math.max(d.spawnMin, d.spawnBase - d.spawnPerSector * (sector - 1)),
       elite: Math.min(d.eliteMax, d.eliteBase + d.elitePerSector * (sector - 1))
     };
   };
@@ -522,7 +520,6 @@
     parts.length = 0;
     rings.length = 0;
     pops.length = 0;
-    pendings.length = 0;
     hazards.length = 0;
 
     state = 'play';
@@ -544,9 +541,9 @@
     warnT = 0;
     bossBannerT = 0;
     boss = null;
-    graceT = CONFIG.sector.grace;
-    spawnT = 0.65;
+    waveBanner = null;
     carrierT = CONFIG.carrier.first;
+    director.reset(1);
     newRecord = false;
     lastSector = -1;
 
@@ -590,12 +587,13 @@
     warnT = 0;
     boss = null;
     bossBannerT = 0;
+    waveBanner = null;
+    director.reset(1);
     eBullets.length = 0;
     hazards.length = 0;
     enemies.length = 0;
     drops.length = 0;
     pBullets.length = 0;
-    pendings.length = 0;
     Audio.beamOff();
     Audio.stopMusic(0.3);
   }
@@ -744,49 +742,6 @@
 
     enemies.push(e);
     return e;
-  }
-
-  function pend(t, fn) {
-    pendings.push({ t, fn });
-  }
-
-  function doWave() {
-    const r = Math.random();
-    const s = sector;
-
-    if (r < 0.30) {
-      const n = 5, cx = rand(90, W - 90);
-      for (let i = 0; i < n; i++) {
-        const ox = cx + (i - (n - 1) / 2) * 48;
-        pend(i * 0.11, () => spawnEnemy('fighter', clamp(ox, 30, W - 30), -30));
-      }
-    } else if (r < 0.50) {
-      const n = s > 3 ? 7 : 6;
-      for (let i = 0; i < n; i++) {
-        pend(i * 0.10, () => spawnEnemy('fighter', 45 + i * (W - 90) / (n - 1), -30));
-      }
-    } else if (r < 0.65 && s >= 1) {
-      const n = s > 3 ? 4 : 3;
-      for (let i = 0; i < n; i++) {
-        const side = i % 2 ? -1 : 1;
-        pend(i * 0.20, () => spawnEnemy('diver', side < 0 ? rand(W - 120, W - 30) : rand(30, 120), -30));
-      }
-    } else if (r < 0.79 && s >= 1) {
-      const n = s > 4 ? 3 : 2;
-      for (let i = 0; i < n; i++) pend(i * 0.30, () => spawnEnemy('gunship', rand(60, W - 60), -42));
-      if (s > 2) pend(0.35, () => spawnEnemy('fighter', rand(40, W - 40), -30));
-    } else if (r < 0.89 && s >= 2) {
-      pend(0, () => spawnEnemy('sentinel', rand(90, W - 90), -40));
-      pend(0.3, () => spawnEnemy('fighter', rand(40, W - 40), -30));
-      pend(0.55, () => spawnEnemy('fighter', rand(40, W - 40), -30));
-    } else if (s >= 3) {
-      pend(0, () => spawnEnemy('fighter', rand(40, W - 40), -30, { elite: true }));
-      pend(0.35, () => spawnEnemy('fighter', rand(40, W - 40), -30));
-      pend(0.6, () => spawnEnemy('gunship', rand(60, W - 60), -40));
-    } else {
-      spawnEnemy('fighter', rand(40, W - 40), -30);
-      pend(0.3, () => spawnEnemy('gunship', rand(60, W - 60), -40));
-    }
   }
 
   function spawnCarrier() {
@@ -1095,9 +1050,8 @@
     sectorT = 0;
     boss = null;
     bossBannerT = 0;
-    graceT = CONFIG.sector.grace;
-    spawnT = 0.9;
     carrierT = CONFIG.carrier.first;
+    director.reset(sector);
     buildSector(sector);
     banner = { text: 'SECTOR ' + romanOf(sector), sub: theme.name, t: 0, dur: CONFIG.sector.bannerDur };
     Audio.bossDown();
@@ -1759,44 +1713,39 @@
   // -------------------------------------------------------------------------
   // Game update
   // -------------------------------------------------------------------------
-  function updateWaves(dt) {
-    sectorT += dt;
-    const d = difficulty();
-    const bossAt = Math.min(CONFIG.sector.bossMax, CONFIG.sector.firstBoss + CONFIG.sector.bossStep * (sector - 1));
-
-    for (let i = pendings.length - 1; i >= 0; i--) {
-      const q = pendings[i];
-      q.t -= dt;
-      if (q.t <= 0) {
-        if (typeof q.fn === 'function') q.fn();
-        pendings.splice(i, 1);
-      }
-    }
-
-    if (warnT > 0) {
-      warnT = Math.max(0, warnT - dt);
-      if (warnT <= 0) makeBoss();
-      return;
-    }
-
-    if (!boss && sectorT >= bossAt) {
-      warnT = 2.3;
+  function handleWaveEvent(ev) {
+    if (ev.type === 'spawn') {
+      spawnEnemy(ev.enemy, ev.x, ev.y, ev.opts);
+    } else if (ev.type === 'waveStart') {
+      waveBanner = {
+        text: 'WAVE ' + (ev.index + 1) + ' / ' + ev.total,
+        sub: ev.name,
+        code: ev.code,
+        t: 0,
+        dur: CONFIG.sector.waveBannerDur
+      };
+    } else if (ev.type === 'bossWarning') {
+      warnT = CONFIG.sector.warnDur;
       Audio.alarm();
       Audio.setMusicMode('boss');
-      return;
+    } else if (ev.type === 'bossSpawn') {
+      warnT = 0;
+      makeBoss();
     }
+  }
 
-    if (!boss) {
-      graceT = Math.max(0, graceT - dt);
-      if (graceT <= 0) {
-        spawnT -= dt;
-        if (spawnT <= 0) {
-          spawnT = d.spawn;
-          doWave();
-        }
-        carrierT -= dt;
-        if (carrierT <= 0) spawnCarrier();
-      }
+  function updateWaves(dt) {
+    sectorT += dt;
+
+    const events = director.update(dt);
+    for (const ev of events) handleWaveEvent(ev);
+
+    // warnT is presentation only: the director owns the actual boss timing.
+    if (warnT > 0) warnT = Math.max(0, warnT - dt);
+
+    if (!boss && director.isSpawning()) {
+      carrierT -= dt;
+      if (carrierT <= 0) spawnCarrier();
     }
   }
 
@@ -1837,6 +1786,10 @@
     if (banner) {
       banner.t += dt;
       if (banner.t >= banner.dur) banner = null;
+    }
+    if (waveBanner) {
+      waveBanner.t += dt;
+      if (waveBanner.t >= waveBanner.dur) waveBanner = null;
     }
     if (bossBannerT > 0) bossBannerT = Math.max(0, bossBannerT - dt);
 
@@ -2475,6 +2428,48 @@
     }
   }
 
+  function drawWaveHud() {
+    const total = director.waveCount;
+    const phase = director.phase;
+    if (phase === 'boss') return;
+
+    let label, color = theme.accent;
+    if (phase === 'bossWarning') {
+      label = 'BOSS 接近';
+      color = '#ff6b5a';
+    } else if (phase === 'intermission') {
+      label = 'WAVE ' + (director.waveIndex + 1) + ' / ' + total + ' 完成';
+    } else if (phase === 'wave') {
+      label = 'WAVE ' + (director.waveIndex + 1) + ' / ' + total;
+    } else {
+      label = 'WAVE 1 / ' + total;
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 9px ' + MONO;
+    ctx.fillStyle = color;
+    ctx.fillText(label, W / 2, 34);
+
+    const gap = 4, pipW = 18;
+    const x0 = W / 2 - (total * pipW + (total - 1) * gap) / 2;
+    for (let i = 0; i < total; i++) {
+      const x = x0 + i * (pipW + gap);
+      ctx.fillStyle = 'rgba(255,255,255,.12)';
+      ctx.fillRect(x, 38, pipW, 4);
+      let fill = 0;
+      if (phase === 'bossWarning' || i < director.waveIndex) {
+        fill = 1;
+      } else if (i === director.waveIndex) {
+        if (phase === 'intermission') fill = 1;
+        else if (phase === 'wave') fill = clamp(director.waveT / director.waveDef.duration, 0, 1);
+      }
+      if (fill > 0) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, 38, pipW * fill, 4);
+      }
+    }
+  }
+
   function drawHUD() {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -2498,6 +2493,7 @@
     ctx.font = '10px ' + FONT;
     ctx.fillStyle = theme.accent;
     ctx.fillText('SECTOR ' + romanOf(sector), W / 2, 20);
+    drawWaveHud();
 
     for (let i = 0; i < player.lives; i++) drawShipIcon(W - 24 - i * 18, 20);
     for (let i = 0; i < player.bombs; i++) drawBombIcon(W - 22 - i * 17, 40);
@@ -2678,6 +2674,28 @@
     ctx.font = '9px ' + MONO;
     ctx.fillStyle = 'rgba(200,220,245,.5)';
     ctx.fillText(theme.code, 0, 39);
+    ctx.restore();
+  }
+
+  function drawWaveBanner() {
+    if (!waveBanner) return;
+    const alpha = Math.min(1, waveBanner.t * 5, (waveBanner.dur - waveBanner.t) * 3);
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 10px ' + MONO;
+    ctx.fillStyle = 'rgba(170,215,255,.8)';
+    ctx.fillText(waveBanner.text, W / 2, H * 0.4 - 20);
+    ctx.font = '900 24px ' + FONT;
+    ctx.fillStyle = theme.accent;
+    ctx.strokeStyle = 'rgba(0,0,0,.6)';
+    ctx.lineWidth = 4;
+    ctx.strokeText(waveBanner.sub, W / 2, H * 0.4 + 4);
+    ctx.fillText(waveBanner.sub, W / 2, H * 0.4 + 4);
+    ctx.font = '9px ' + MONO;
+    ctx.fillStyle = 'rgba(200,220,245,.5)';
+    ctx.fillText(waveBanner.code, W / 2, H * 0.4 + 22);
     ctx.restore();
   }
 
@@ -3029,6 +3047,7 @@
     if (state === 'play' && !paused) {
       if (warnT > 0) drawWarn();
       if (bossBannerT > 0) drawBossBanner();
+      drawWaveBanner();
       drawSectorBanner();
     }
 
@@ -3106,6 +3125,7 @@
           id: boss.type.id, state: boss.state, hp: boss.hp, maxHp: boss.maxHp,
           parts: boss.parts.map(p => ({ id: p.id, alive: p.alive }))
         } : null,
+        wave: director.snapshot(),
         audio: {
           ready: !!Audio.ac,
           musicMode: Audio._music.mode,
@@ -3143,16 +3163,26 @@
     },
     forceSector(n) {
       sector = n;
+      sectorT = 0;
+      warnT = 0;
+      waveBanner = null;
+      director.reset(n);
       buildSector(n);
     },
     spawnBoss() {
       warnT = 0;
+      waveBanner = null;
       makeBoss();
       boss.state = 'fight';
       boss.y = 140;
+      director.setBossActive();
     },
     triggerBossWarning() {
-      sectorT = 9999;
+      if (!director.skipToBoss()) return;
+      warnT = CONFIG.sector.warnDur;
+      waveBanner = null;
+      Audio.alarm();
+      Audio.setMusicMode('boss');
     },
     hurtBoss(n) {
       if (!boss) return;

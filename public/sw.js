@@ -10,6 +10,7 @@ const PRECACHE = [
   './thunder_strike.js',
   './js/config.js',
   './js/audio.js',
+  './js/waves.js',
   './js/pwa.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

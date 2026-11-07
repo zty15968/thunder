@@ -44,11 +44,12 @@
       stickDead: 0.12
     },
     sector: {
-      firstBoss: 55,
-      bossStep: 3,
-      bossMax: 78,
+      waves: 5,
       grace: 3.0,
-      bannerDur: 2.6
+      intermission: 1.2,
+      warnDur: 2.3,
+      bannerDur: 2.6,
+      waveBannerDur: 2.2
     },
     difficulty: {
       hpPerSector: 0.34,
@@ -58,9 +59,6 @@
       bulletSpeedBase: 165,
       bulletSpeedPerSector: 6,
       bulletSpeedMax: 255,
-      spawnBase: 1.15,
-      spawnMin: 0.55,
-      spawnPerSector: 0.045,
       eliteBase: 0.08,
       elitePerSector: 0.025,
       eliteMax: 0.28

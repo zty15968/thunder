@@ -50,6 +50,7 @@ public/thunder_strike.css   画布缩放、移动端与触屏样式
 public/thunder_strike.js    游戏主循环、实体、碰撞、Boss、渲染、UI
 public/js/config.js         全部数值配置（玩家/武器/敌人/Boss/星区/难度）
 public/js/audio.js          WebAudio 音效与程序化 BGM
+public/js/waves.js          数据驱动的波次脚本与 WaveDirector
 public/js/pwa.js            Service Worker 注册、安装入口
 public/sw.js                离线缓存
 public/manifest.webmanifest PWA 清单
@@ -57,7 +58,16 @@ public/icons/               应用图标（由 tools/make-icons.ps1 生成）
 tools/                      本地服务器、检查、打包与 headless 回归测试
 ```
 
-加载顺序必须是 `config.js` → `audio.js` → `thunder_strike.js` → `pwa.js`，因为后两者依赖 `window.TS` 命名空间。新增脚本时同步更新入口与 `tools/check.js`。
+加载顺序必须是 `config.js` → `audio.js` → `waves.js` → `thunder_strike.js` → `pwa.js`，因为后两者依赖 `window.TS` 命名空间。新增脚本时同步更新入口与 `tools/check.js`。
+
+## 波次与 Boss
+
+每个星区固定 5 波，单波 13–15 秒，波次之间 1.2 秒喘息，随后是 2.3 秒 Boss 警告。首轮 Boss 约在 80 秒出现，击破后进入下一星区。
+
+- 波次脚本集中在 `public/js/waves.js` 的 `WAVE_DEFS`：每组包含出现时间、敌人类型、数量、阵型（`line` / `arc` / `sides` / `random`）与间隔。
+- `minSector` 控制后期星区才解锁的精英组，`growth` 让后续星区在基础数量上追加小兵。
+- `WaveDirector` 只负责时间轴与刷怪事件；游戏本体处理实体、音效与渲染。调试快照中的 `wave` 字段包含当前阶段、波次编号与距下一个 Boss 的时间。
+- Boss 出现前会清空待刷怪队列，击破后 `director.reset()` 重置为新星区的第 1 波。
 
 ## 调整数值
 
@@ -68,6 +78,8 @@ tools/                      本地服务器、检查、打包与 headless 回归
 - `ENEMY_TYPES`：普通敌人属性与弹幕节奏
 - `BOSS_TYPES`：三种 Boss 的部件、血量与配色
 - `SECTORS`：星区主题、背景配色与视觉元素
+- `CONFIG.sector`：波次数量、波次间隔、Boss 警告时长与横幅时长
+- `WAVE_DEFS`（`public/js/waves.js`）：每波的时间轴、敌人编队与解锁条件
 - `CONFIG.difficulty`：随 sector 增长的难度曲线
 - `CONFIG.drops` / `CONFIG.carrier`：随机掉落概率、保底击杀数、掉落权重与补给舰间隔
 
